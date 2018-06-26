@@ -31,8 +31,11 @@ int main(int argc, char **argv)
 		switch (c) {
 		//WITH NO PARAMETER
 		case 'b':
+			b_broadcast = TRUE;
+			printf("WARNING: pinging broadcast address.\n");
 			break;
 		case 'f':
+			interval = 0.005;
 			break;
 		case 'h':
 			printf("Usage: ping [-aAbBdDfhLnOqrRUvV] [-c count] [-i interval] [-I interface]\n            [-m mark] [-M pmtudisc_option] [-l preload] [-p pattern] [-Q tos]\n            [-s packetsize] [-S sndbuf] [-t ttl] [-T timestamp_option]\n            [-w deadline] [-W timeout] [hop1 ...] destination\n");
@@ -60,6 +63,12 @@ int main(int argc, char **argv)
 			if(interval < 0.2)
 				err_quit("ping: cannot flood; minimal interval allowed for user is 200ms.\n");
 			break;
+		case 's':
+			packetsize = atoi(optarg);
+			datalen = packetsize;
+			if(packetsize < 0 || packetsize > 65507)
+				err_quit("ping: illegal negative packet size -1.\n");
+			break;
 		case 't':
 			ttl = atoi(optarg);
 			if(ttl < 1.0)
@@ -67,7 +76,7 @@ int main(int argc, char **argv)
 			break;
 		case 'W':
 			timeout = atoi(optarg);
-			if(timeout < 0.0)
+			if(timeout < 0)
 				err_quit("ping: bad wait time.\n");
 			break;
 		//UNSPEC
@@ -119,19 +128,29 @@ void readloop(void)
 	struct timeval tval;
 	struct timeval tval_start;
 	struct timeval tval_end;
+	struct timeval tval_curr;
+	struct timeval tval_last;
+	int tmp_nsent;
+
+	gettimeofday(&tval_start, NULL);
+	gettimeofday(&tval_last, NULL);
 
 	sockfd = socket(pr->sasend->sa_family, SOCK_RAW, pr->icmpproto);
 	setuid(getuid());  /* don't need special permissions any more */
 
 	size = 60 * 1024;  /* OK if setsockopt fails */
-	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+	setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, (const char *)&b_broadcast, sizeof(bool));//[-b]
+	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));//[-s packetsize]
+	setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
+	setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
 
 	sig_alrm(SIGALRM);  /* send first packet */
-	gettimeofday(&tval_start, NULL);
 
 	for(;nsent <= count;){//[-c count]
+		gettimeofday(&tval_end, NULL);
 		len = pr->salen;
 		n = recvfrom(sockfd, recvbuf, sizeof(recvbuf), 0, pr->sarecv, &len);
+
 		transmitted += 1;
 
 		if (n < 0) {
@@ -149,7 +168,6 @@ void readloop(void)
 
 	transmitted /= 2;
 	received /= 2;
-	gettimeofday(&tval_end, NULL);
 	tv_sub(&tval_end, &tval_start);
 	totaltime = tval_end.tv_sec * 1000.0 + tval_end.tv_usec / 1000.0;
 	loss = (double)(transmitted - received)/(double)transmitted;
@@ -195,6 +213,7 @@ void proc_v4(char *ptr, ssize_t len, struct timeval *tvrecv)
 	}
 }
 
+
 void proc_v6(char *ptr, ssize_t len, struct timeval* tvrecv)
 {
 #ifdef IPV6
@@ -229,6 +248,9 @@ void proc_v6(char *ptr, ssize_t len, struct timeval* tvrecv)
 		tvsend = (struct timeval *) (icmp6 + 1);
 		tv_sub(tvrecv, tvsend);
 		rtt = tvrecv->tv_sec * 1000.0 + tvrecv->tv_usec / 1000.0;
+		//rtt_list[icmp6->icmp_seq] = rtt;
+
+		sleep(interval);
 
 		printf("%d bytes from %s: seq=%u, hlim=%d, rtt=%.3f ms\n",
 			icmp6len, Sock_ntop_host(pr->sarecv, pr->salen),
@@ -260,11 +282,11 @@ void proc_rtt(void)
 	}
 
 	avg = sum / received;
-	mdev = 0.0;
+	mdev = max - min;
 
-	printf("--- %s ping statistics ---\n",Sock_ntop_host(pr->sarecv, pr->salen));
+	printf("\n--- %s ping statistics ---\n",Sock_ntop_host(pr->sarecv, pr->salen));
 	printf("%d packets transmitted, %d received, %.3f%% packet loss, time %.3lf ms\n",transmitted,received,loss,totaltime);
-	printf("rtt min/avg/max/mdev = %.3lf/%.3lf/%.3lf/%.3lf\n",min,avg,max,mdev);
+	printf("rtt min/avg/max/mdev = %.3lf/%.3lf/%.3lf/%.3lf\n\n",min,avg,max,mdev);
 }
 
 unsigned short in_cksum(unsigned short *addr, int len)
@@ -340,7 +362,8 @@ void sig_alrm(int signo)
 {
 	(*pr->fsend)();
 
-	alarm(1);
+	alarm(interval);//[-i interval]
+	//alarm(1);
 	return; /* probably interrupts recvfrom() */
 }
 
@@ -437,7 +460,7 @@ static void err_doit(int errnoflag, int level, const char *fmt, va_list ap)
 	strcat(buf, "\n");
 
 	if (daemon_proc) {
-		syslog(level, buf);
+		;//syslog(level, buf);
 	}
 	else {
 		fflush(stdout); /* in case stdout and stderr are the same */
