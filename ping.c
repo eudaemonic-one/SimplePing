@@ -145,7 +145,7 @@ void readloop(void)
 
 	size = 60 * 1024;  /* OK if setsockopt fails */
 	setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, (const char *)&b_broadcast, sizeof(bool));//[-b]
-	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));//[-s packetsize]
+	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, (const char *)&size, sizeof(size));//[-s packetsize]
 	setsockopt(sockfd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));//[-t ttl]
 	setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
@@ -333,7 +333,7 @@ void send_v4(void)
 	struct icmp *icmp;
 
 	icmp = (struct icmp *) sendbuf;
-	icmp->icmp_type = ICMP_ECHO;//ECHO...
+	icmp->icmp_type = ICMP_ECHO;
 	icmp->icmp_code = 0;
 	icmp->icmp_id = pid;
 	icmp->icmp_seq = nsent++;

@@ -59,11 +59,56 @@ void err_quit(const char *fmt, ...);
 void err_sys(const char *fmt, ...);
 
 struct proto {
- void (*fproc)(char *, ssize_t, struct timeval *);
- void (*fsend)(void);
+ void (*fproc)(char *, ssize_t, struct timeval *);  /* icmp_seq ttl time */
+ void (*fsend)(void);  /* send packet */
  struct sockaddr *sasend; /* sockaddr{} for send, from getaddrinfo */
  struct sockaddr *sarecv; /* sockaddr{} for receiving */
  socklen_t salen; /* length of sockaddr{}s */
  int  icmpproto; /* IPPROTO_xxx value for ICMP */
 } *pr;
+
+
+/*Self-defined*/
+#define TRUE 1
+#define FALSE 0
+#define bool int
+
+void proc_rtt(void);
+
+/*ping statistics*/
+int transmitted = 0;
+int received = 0;
+double loss = 0.0;
+double totaltime = 0.0;
+
+double rtt_list[BUFSIZE];
+double min = 0.0;
+double avg = 0.0;
+double max = 0.0;
+double mdev = 0.0;
+
+/*ping With-No-Parameter*/
+bool b_broadcast = FALSE;
+bool b_verbose = FALSE;
+bool b_quiet = FALSE;
+
+/*ping With-Parameters*/
+int count = 1000;//[-c count] (time)
+double interval = 1.0;//[-i interval] (s)
+int sndbuf = BUFSIZE;//[-S sndbuf] (byte)
+int packetsize = 56;//[-s packetsize] (byte)
+int ttl = 64;//[-t ttl](time)
+int timeout = 0;//[-W timeout] (ms)
+double deadline = 0.0;//[-w deadline] (ms)
+
+
+
+
+
+
+
+
+
+
+
 
