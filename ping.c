@@ -26,6 +26,8 @@ int main(int argc, char **argv)
 	//opterr-whether or not output error information into stderr
 	//optopt-choice not declared in optstring
 	
+	(void)signal(SIGINT,proc_rtt);//CTRL+C
+
 	opterr = 0;
 	while ((c = getopt(argc, argv, "aAbBdDfhLnOqrRUvVc:i::I:m:M:l:p:Q:s:S:t:T:w:W:")) != -1) {
 		switch (c) {
@@ -152,8 +154,8 @@ void readloop(void)
 	setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, (const char *)&b_broadcast, sizeof(bool));//[-b]
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, (const char *)&size, sizeof(size));//[-s packetsize]
 	setsockopt(sockfd, IPPROTO_IP, IP_TTL, (const char *)&ttl, sizeof(ttl));//[-t ttl]
-	setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
-	setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
+	//setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
+	//setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
 
 	sig_alrm(SIGALRM);  /* send first packet */
 
@@ -189,9 +191,9 @@ void readloop(void)
 	//received /= 2;
 	tv_sub(&tval_end, &tval_start);
 	totaltime = tval_end.tv_sec * 1000.0 + tval_end.tv_usec / 1000.0;
-	loss = (double)(transmitted - received)/(double)transmitted;
+	loss = ((double)(transmitted - received)/(double)transmitted)*100;
 
-	proc_rtt();//Output: ping statistics
+	proc_rtt(0);//Output: ping statistics
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -221,13 +223,13 @@ void proc_v4(char *ptr, ssize_t len, struct timeval *tvrecv)
 		rtt = tvrecv->tv_sec * 1000.0 + tvrecv->tv_usec / 1000.0;//Round-Trip time
 		rtt_list[icmp->icmp_seq] = rtt;
 		
-		if(b_quiet==FALSE)
+		if(b_quiet==FALSE)//[-q]
 			printf("%d bytes from %s: seq=%u, ttl=%d, rtt=%.3f ms\n",
 			icmplen, Sock_ntop_host(pr->sarecv, pr->salen),
 			icmp->icmp_seq, ip->ip_ttl, rtt);
 	}
 	else if (verbose) {
-		if(b_quiet==FALSE)
+		if(b_quiet==FALSE)//[-q]
 			printf("  %d bytes from %s: type = %d, code = %d\n",
 			icmplen, Sock_ntop_host(pr->sarecv, pr->salen),
 			icmp->icmp_type, icmp->icmp_code);
@@ -285,7 +287,7 @@ void proc_v6(char *ptr, ssize_t len, struct timeval* tvrecv)
 #endif /* IPV6 */
 }
 
-void proc_rtt(void)
+void proc_rtt(int sig)
 {
 	int i = 0;
 	double rtt = 0.0;
@@ -308,6 +310,8 @@ void proc_rtt(void)
 	printf("\n--- %s ping statistics ---\n",Sock_ntop_host(pr->sarecv, pr->salen));
 	printf("%d packets transmitted, %d received, %.3f%% packet loss, time %.3lf ms\n",transmitted,received,loss,totaltime);
 	printf("rtt min/avg/max/mdev = %.3lf/%.3lf/%.3lf/%.3lf\n\n",min,avg,max,mdev);
+
+	exit(0);
 }
 
 unsigned short in_cksum(unsigned short *addr, int len)
