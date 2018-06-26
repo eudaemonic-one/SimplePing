@@ -42,6 +42,9 @@ int main(int argc, char **argv)
 		case 'h':
 			printf("Usage: ping [-aAbBdDfhLnOqrRUvV] [-c count] [-i interval] [-I interface]\n            [-m mark] [-M pmtudisc_option] [-l preload] [-p pattern] [-Q tos]\n            [-s packetsize] [-S sndbuf] [-t ttl] [-T timestamp_option]\n            [-w deadline] [-W timeout] [hop1 ...] destination\n");
 			break;
+		case 'n':
+			b_nonhostname = TRUE;
+			break;
 		case 'q':
 			b_quiet = TRUE;
 			break;
@@ -69,6 +72,8 @@ int main(int argc, char **argv)
 			break;
 		case 'S':
 			sndbuf = atoi(optarg);
+			if(sndbuf <= 0)
+				err_quit("ping: bad sndbuf value.\n");
 			break;
 		case 's':
 			packetsize = atoi(optarg);
@@ -91,6 +96,7 @@ int main(int argc, char **argv)
 			if(deadline < 0)
 				err_quit("ping: bad deadline time.\n");
 			break;
+		
 		//UNSPEC
 		case '?':
 			err_quit("unrecognized option: %c\n", c);
@@ -105,9 +111,11 @@ int main(int argc, char **argv)
 	signal(SIGALRM, sig_alrm);
 
 	ai = host_serv(host, NULL, 0, 0);
-
-	printf("ping %s (%s): %d data bytes\n", ai->ai_canonname, Sock_ntop_host(ai->ai_addr, ai->ai_addrlen), datalen);
-
+	if(b_nonhostname == FALSE)
+		printf("ping %s (%s): %d data bytes\n", ai->ai_canonname, Sock_ntop_host(ai->ai_addr, ai->ai_addrlen), datalen);
+	else 
+		printf("ping %s: %d data bytes\n",  Sock_ntop_host(ai->ai_addr, ai->ai_addrlen), datalen);
+	
 	if (ai->ai_family == AF_INET) {
 		pr = &proto_v4;
 #ifdef IPV6
@@ -154,6 +162,7 @@ void readloop(void)
 	setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, (const char *)&b_broadcast, sizeof(bool));//[-b]
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, (const char *)&size, sizeof(size));//[-s packetsize]
 	setsockopt(sockfd, IPPROTO_IP, IP_TTL, (const char *)&ttl, sizeof(ttl));//[-t ttl]
+	setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, (const char *)&sndbuf, sizeof(int));//[-S sndbuf]
 	//setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
 	//setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
 

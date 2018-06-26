@@ -73,7 +73,7 @@ struct proto {
 #define FALSE 0
 #define bool int
 
-void proc_rtt(void);
+void proc_rtt(int);
 
 /*ping statistics*/
 int transmitted = 0;
@@ -89,6 +89,7 @@ double mdev = 0.0;
 
 /*ping With-No-Parameter*/
 bool b_broadcast = FALSE;
+bool b_nonhostname = FALSE;
 bool b_verbose = FALSE;
 bool b_quiet = FALSE;
 
@@ -98,9 +99,8 @@ double interval = 1.0;//[-i interval] (s)
 int sndbuf = BUFSIZE;//[-S sndbuf] (byte)
 int packetsize = 56;//[-s packetsize] (byte)
 int ttl = 64;//[-t ttl](time)
-int timeout = 0;//[-W timeout] (ms)
-double deadline = 0.0;//[-w deadline] (ms)
-
+int timeout = 6538;//[-W timeout] (ms)
+double deadline = 6538;//[-w deadline] (ms)
 
 
 
