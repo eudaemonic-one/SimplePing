@@ -80,9 +80,14 @@ int main(int argc, char **argv)
 				err_quit("ping: can't set unicast time-to-live: Invalid argument.\n");
 			break;
 		case 'W':
-			timeout = atoi(optarg);
+			timeout = atof(optarg);
 			if(timeout < 0)
 				err_quit("ping: bad wait time.\n");
+			break;
+		case 'w':
+			deadline = atof(optarg);
+			if(deadline < 0)
+				err_quit("ping: bad deadline time.\n");
 			break;
 		//UNSPEC
 		case '?':
@@ -146,7 +151,7 @@ void readloop(void)
 	size = 60 * 1024;  /* OK if setsockopt fails */
 	setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, (const char *)&b_broadcast, sizeof(bool));//[-b]
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, (const char *)&size, sizeof(size));//[-s packetsize]
-	setsockopt(sockfd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));//[-t ttl]
+	setsockopt(sockfd, IPPROTO_IP, IP_TTL, (const char *)&ttl, sizeof(ttl));//[-t ttl]
 	setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
 
@@ -159,9 +164,17 @@ void readloop(void)
 		n = recvfrom(sockfd, recvbuf, sizeof(recvbuf), 0, pr->sarecv, &len);
 		gettimeofday(&tval_end, NULL);
 
+		//[-w deadline]
+		gettimeofday(&tval_curr, NULL);
+		tv_sub(&tval_curr, &tval_start);
+		if(((&tval_curr)->tv_sec * 1000.0 + (&tval_curr)->tv_usec / 1000.0) > deadline*1000.0)
+			break;
+
 		if (n < 0) {
 			if (errno == EINTR)
+			{			
 				continue;
+			}
 			else
 				err_sys("recvfrom error");
 		}
