@@ -35,17 +35,19 @@ int main(int argc, char **argv)
 			printf("WARNING: pinging broadcast address.\n");
 			break;
 		case 'f':
-			interval = 0.005;
+			interval = 0.1;
 			break;
 		case 'h':
 			printf("Usage: ping [-aAbBdDfhLnOqrRUvV] [-c count] [-i interval] [-I interface]\n            [-m mark] [-M pmtudisc_option] [-l preload] [-p pattern] [-Q tos]\n            [-s packetsize] [-S sndbuf] [-t ttl] [-T timestamp_option]\n            [-w deadline] [-W timeout] [hop1 ...] destination\n");
 			break;
 		case 'q':
+			b_quiet = TRUE;
 			break;
 		case 'R':
 			break;
 		case 'v':
 			verbose++;
+			b_verbose = TRUE;
 			break;
 		//WITH PARAMETERS
 		case 'c':
@@ -63,6 +65,9 @@ int main(int argc, char **argv)
 			if(interval < 0.2)
 				err_quit("ping: cannot flood; minimal interval allowed for user is 200ms.\n");
 			break;
+		case 'S':
+			sndbuf = atoi(optarg);
+			break;
 		case 's':
 			packetsize = atoi(optarg);
 			datalen = packetsize;
@@ -71,7 +76,7 @@ int main(int argc, char **argv)
 			break;
 		case 't':
 			ttl = atoi(optarg);
-			if(ttl < 1.0)
+			if(ttl < 1)
 				err_quit("ping: can't set unicast time-to-live: Invalid argument.\n");
 			break;
 		case 'W':
@@ -141,17 +146,18 @@ void readloop(void)
 	size = 60 * 1024;  /* OK if setsockopt fails */
 	setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, (const char *)&b_broadcast, sizeof(bool));//[-b]
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));//[-s packetsize]
+	setsockopt(sockfd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));//[-t ttl]
 	setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
 
 	sig_alrm(SIGALRM);  /* send first packet */
 
-	for(;nsent <= count;){//[-c count]
-		gettimeofday(&tval_end, NULL);
+	for(;nsent < count;){//[-c count]
+		transmitted += 1;
+
 		len = pr->salen;
 		n = recvfrom(sockfd, recvbuf, sizeof(recvbuf), 0, pr->sarecv, &len);
-
-		transmitted += 1;
+		gettimeofday(&tval_end, NULL);
 
 		if (n < 0) {
 			if (errno == EINTR)
@@ -166,8 +172,8 @@ void readloop(void)
 		received += 1;	
 	}
 
-	transmitted /= 2;
-	received /= 2;
+	//transmitted /= 2;
+	//received /= 2;
 	tv_sub(&tval_end, &tval_start);
 	totaltime = tval_end.tv_sec * 1000.0 + tval_end.tv_usec / 1000.0;
 	loss = (double)(transmitted - received)/(double)transmitted;
@@ -201,13 +207,15 @@ void proc_v4(char *ptr, ssize_t len, struct timeval *tvrecv)
 		tv_sub(tvrecv, tvsend);
 		rtt = tvrecv->tv_sec * 1000.0 + tvrecv->tv_usec / 1000.0;//Round-Trip time
 		rtt_list[icmp->icmp_seq] = rtt;
-
-		printf("%d bytes from %s: seq=%u, ttl=%d, rtt=%.3f ms\n",
+		
+		if(b_quiet==FALSE)
+			printf("%d bytes from %s: seq=%u, ttl=%d, rtt=%.3f ms\n",
 			icmplen, Sock_ntop_host(pr->sarecv, pr->salen),
 			icmp->icmp_seq, ip->ip_ttl, rtt);
 	}
 	else if (verbose) {
-		printf("  %d bytes from %s: type = %d, code = %d\n",
+		if(b_quiet==FALSE)
+			printf("  %d bytes from %s: type = %d, code = %d\n",
 			icmplen, Sock_ntop_host(pr->sarecv, pr->salen),
 			icmp->icmp_type, icmp->icmp_code);
 	}
@@ -329,6 +337,7 @@ void send_v4(void)
 	icmp->icmp_code = 0;
 	icmp->icmp_id = pid;
 	icmp->icmp_seq = nsent++;
+	//icmp->icmp_ttl = ttl;//[-t ttl]
 	gettimeofday((struct timeval *) icmp->icmp_data, NULL);
 
 	len = 8 + datalen;  /* checksum ICMP header and data */
