@@ -13,168 +13,54 @@ int main(int argc, char **argv)
 	int c;
 	struct addrinfo *ai;
 
-	/*ping Usage: 
-	Usage: ping [-aAbBdDfhLnOqrRUvV] [-c count] [-i interval] [-I interface]
-            [-m mark] [-M pmtudisc_option] [-l preload] [-p pattern] [-Q tos]
-            [-s packetsize] [-S sndbuf] [-t ttl] [-T timestamp_option]
-            [-w deadline] [-W timeout] [hop1 ...] destination
-	*/
+	//getopt() - 获取并分析命令行参数项 argc & argv
 
-
-	//getopt()
-	//optind-cursor of next parameter
-	//opterr-whether or not output error information into stderr
-	//optopt-choice not declared in optstring
-	
-	opterr = 0;
-	while ((c = getopt(argc, argv, "aAbBdDfhLnOqrRUvVc:i::I:m:M:l:p:Q:s:S:t:T:w:W:")) != -1) {
+	opterr = 0;  /* don't want getopt() writing to stderr */
+	while ((c = getopt(argc, argv, "v")) != -1) {
 		switch (c) {
-		//WITH NO PARAMETER
-		case 'b':
-			b_broadcast = TRUE;
-			printf("WARNING: pinging broadcast address.\n");
-			break;
-		case 'f':
-			interval = 0.005;
-			break;
-		case 'h':
-			printf("Usage: ping [-aAbBdDfhLnOqrRUvV] [-c count] [-i interval] [-I interface]\n            [-m mark] [-M pmtudisc_option] [-l preload] [-p pattern] [-Q tos]\n            [-s packetsize] [-S sndbuf] [-t ttl] [-T timestamp_option]\n            [-w deadline] [-W timeout] [hop1 ...] destination\n");
-			break;
-		case 'q':
-			break;
-		case 'R':
-			break;
-		case 'v':
+		case 'v'://参数项数目冗余
 			verbose++;
 			break;
-		//WITH PARAMETERS
-		case 'c':
-			//e.g. With Parameter
-			//printf("HAVE option: -%c\n",c);
-			//printf("The argument of -%c is %s\n", c, optarg);
-			//printf("%d\n\n",count);
-
-			count = atoi(optarg);
-			if(count <= 0)
-				err_quit("ping: bad number of packets to transmit.\n");
-			break;
-		case 'i':
-			interval = atof(optarg);
-			if(interval < 0.2)
-				err_quit("ping: cannot flood; minimal interval allowed for user is 200ms.\n");
-			break;
-		case 's':
-			packetsize = atoi(optarg);
-			datalen = packetsize;
-			if(packetsize < 0 || packetsize > 65507)
-				err_quit("ping: illegal negative packet size -1.\n");
-			break;
-		case 't':
-			ttl = atoi(optarg);
-			if(ttl < 1.0)
-				err_quit("ping: can't set unicast time-to-live: Invalid argument.\n");
-			break;
-		case 'W':
-			timeout = atoi(optarg);
-			if(timeout < 0)
-				err_quit("ping: bad wait time.\n");
-			break;
-		//UNSPEC
-		case '?':
-			err_quit("unrecognized option: %c\n", c);
+		case '?'://无法识别参数
+			err_quit("unrecognized option: %c", c);
 		}
 	}
 
 	if (optind != argc - 1)
 		err_quit("usage: ping [ -v ] <hostname>");
 	host = argv[optind];
-	
-	pid = getpid();
-	signal(SIGALRM, sig_alrm);
 
-	ai = host_serv(host, NULL, 0, 0);
+	pid = getpid();
+	signal(SIGALRM, sig_alrm);//创建SIGALRM信号
+
+	ai = host_serv(host, NULL, 0, 0);//获取主机地址
 
 	printf("ping %s (%s): %d data bytes\n", ai->ai_canonname, Sock_ntop_host(ai->ai_addr, ai->ai_addrlen), datalen);
 
-	if (ai->ai_family == AF_INET) {
+	/*-------初始化地址域-------*/
+	if (ai->ai_family == AF_INET) {//IPV4
 		pr = &proto_v4;
 #ifdef IPV6
 	}
-	else if (ai->ai_family == AF_INET6) {
+	else if (ai->ai_family == AF_INET6) {//IPV6
 		pr = &proto_v6;
 		if (IN6_IS_ADDR_V4MAPPED(&(((struct sockaddr_in6 *)ai->ai_addr)->sin6_addr)))
 			err_quit("cannot ping IPv4-mapped IPv6 address");
 #endif
 	}
-	else
+	else//UNSPEC
 		err_quit("unknown address family %d", ai->ai_family);
 
 	pr->sasend = ai->ai_addr;
 	pr->sarecv = calloc(1, ai->ai_addrlen);
-	pr->salen = ai->ai_addrlen;//IPV4 16
+	pr->salen = ai->ai_addrlen;
 
+	/*-------发送信号&循环接收-------*/
 	readloop();
+	/*----------ping结束-----------*/
 
 	exit(0);
 }
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////
-void readloop(void)
-{
-	int size;
-	char recvbuf[BUFSIZE];
-	socklen_t len;
-	ssize_t n;
-	struct timeval tval;
-	struct timeval tval_start;
-	struct timeval tval_end;
-	struct timeval tval_curr;
-	struct timeval tval_last;
-	int tmp_nsent;
-
-	gettimeofday(&tval_start, NULL);
-	gettimeofday(&tval_last, NULL);
-
-	sockfd = socket(pr->sasend->sa_family, SOCK_RAW, pr->icmpproto);
-	setuid(getuid());  /* don't need special permissions any more */
-
-	size = 60 * 1024;  /* OK if setsockopt fails */
-	setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, (const char *)&b_broadcast, sizeof(bool));//[-b]
-	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));//[-s packetsize]
-	setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
-	setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
-
-	sig_alrm(SIGALRM);  /* send first packet */
-
-	for(;nsent <= count;){//[-c count]
-		gettimeofday(&tval_end, NULL);
-		len = pr->salen;
-		n = recvfrom(sockfd, recvbuf, sizeof(recvbuf), 0, pr->sarecv, &len);
-
-		transmitted += 1;
-
-		if (n < 0) {
-			if (errno == EINTR)
-				continue;
-			else
-				err_sys("recvfrom error");
-		}
-
-		gettimeofday(&tval, NULL);
-		(*pr->fproc)(recvbuf, n, &tval);//Output: icmp_sec & ttl & time
-		
-		received += 1;	
-	}
-
-	transmitted /= 2;
-	received /= 2;
-	tv_sub(&tval_end, &tval_start);
-	totaltime = tval_end.tv_sec * 1000.0 + tval_end.tv_usec / 1000.0;
-	loss = (double)(transmitted - received)/(double)transmitted;
-
-	proc_rtt();//Output: ping statistics
-}
-//////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void proc_v4(char *ptr, ssize_t len, struct timeval *tvrecv)
 {
@@ -199,8 +85,7 @@ void proc_v4(char *ptr, ssize_t len, struct timeval *tvrecv)
 
 		tvsend = (struct timeval *) icmp->icmp_data;
 		tv_sub(tvrecv, tvsend);
-		rtt = tvrecv->tv_sec * 1000.0 + tvrecv->tv_usec / 1000.0;//Round-Trip time
-		rtt_list[icmp->icmp_seq] = rtt;
+		rtt = tvrecv->tv_sec * 1000.0 + tvrecv->tv_usec / 1000.0;
 
 		printf("%d bytes from %s: seq=%u, ttl=%d, rtt=%.3f ms\n",
 			icmplen, Sock_ntop_host(pr->sarecv, pr->salen),
@@ -212,7 +97,6 @@ void proc_v4(char *ptr, ssize_t len, struct timeval *tvrecv)
 			icmp->icmp_type, icmp->icmp_code);
 	}
 }
-
 
 void proc_v6(char *ptr, ssize_t len, struct timeval* tvrecv)
 {
@@ -248,9 +132,6 @@ void proc_v6(char *ptr, ssize_t len, struct timeval* tvrecv)
 		tvsend = (struct timeval *) (icmp6 + 1);
 		tv_sub(tvrecv, tvsend);
 		rtt = tvrecv->tv_sec * 1000.0 + tvrecv->tv_usec / 1000.0;
-		//rtt_list[icmp6->icmp_seq] = rtt;
-
-		sleep(interval);
 
 		printf("%d bytes from %s: seq=%u, hlim=%d, rtt=%.3f ms\n",
 			icmp6len, Sock_ntop_host(pr->sarecv, pr->salen),
@@ -264,32 +145,8 @@ void proc_v6(char *ptr, ssize_t len, struct timeval* tvrecv)
 #endif /* IPV6 */
 }
 
-void proc_rtt(void)
-{
-	int i = 0;
-	double rtt = 0.0;
-	double sum = 0.0;
-
-	min = max = rtt_list[0];
-
-	for(i=0;i<nsent-1;i++){
-		rtt = rtt_list[i];
-		sum += rtt;
-		if(rtt < min)
-			min = rtt;
-		else if (rtt > max)
-			max = rtt;
-	}
-
-	avg = sum / received;
-	mdev = max - min;
-
-	printf("\n--- %s ping statistics ---\n",Sock_ntop_host(pr->sarecv, pr->salen));
-	printf("%d packets transmitted, %d received, %.3f%% packet loss, time %.3lf ms\n",transmitted,received,loss,totaltime);
-	printf("rtt min/avg/max/mdev = %.3lf/%.3lf/%.3lf/%.3lf\n\n",min,avg,max,mdev);
-}
-
-unsigned short in_cksum(unsigned short *addr, int len)
+unsigned short
+in_cksum(unsigned short *addr, int len)
 {
 	int nleft = len;
 	int sum = 0;
@@ -325,7 +182,7 @@ void send_v4(void)
 	struct icmp *icmp;
 
 	icmp = (struct icmp *) sendbuf;
-	icmp->icmp_type = ICMP_ECHO;//ECHO...
+	icmp->icmp_type = ICMP_ECHO;
 	icmp->icmp_code = 0;
 	icmp->icmp_id = pid;
 	icmp->icmp_seq = nsent++;
@@ -358,12 +215,42 @@ void send_v6()
 #endif /* IPV6 */
 }
 
+void readloop(void)
+{
+	int size;
+	char recvbuf[BUFSIZE];
+	socklen_t  len;
+	ssize_t n;
+	struct timeval tval;
+
+	sockfd = socket(pr->sasend->sa_family, SOCK_RAW, pr->icmpproto);//建立socket连接
+	setuid(getuid());  /* don't need special permissions any more */
+
+	size = 60 * 1024;  /* OK if setsockopt fails */
+	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));//设置socket选项
+
+	sig_alrm(SIGALRM);  /* send first packet */ //发送SIGALRM信号
+
+	for (; ; ) {
+		len = pr->salen;//设置接收包的长度
+		n = recvfrom(sockfd, recvbuf, sizeof(recvbuf), 0, pr->sarecv, &len);//接收数据包
+		if (n < 0) {
+			if (errno == EINTR)
+				continue;
+			else
+				err_sys("recvfrom error");
+		}
+
+		gettimeofday(&tval, NULL);//获取接受timestamp
+		(*pr->fproc)(recvbuf, n, &tval);//设置&计算接收时间间隔
+	}
+}
+
 void sig_alrm(int signo)
 {
-	(*pr->fsend)();
+	(*pr->fsend)();//发送SIGALRM数据包
 
-	alarm(interval);//[-i interval]
-	//alarm(1);
+	alarm(1);
 	return; /* probably interrupts recvfrom() */
 }
 
@@ -442,6 +329,7 @@ struct addrinfo *host_serv(const char *host, const char *serv, int family, int s
 
 	return(res); /* return pointer to first on linked list */
 }
+/* end host_serv */
 
 static void err_doit(int errnoflag, int level, const char *fmt, va_list ap)
 {
@@ -460,7 +348,7 @@ static void err_doit(int errnoflag, int level, const char *fmt, va_list ap)
 	strcat(buf, "\n");
 
 	if (daemon_proc) {
-		;//syslog(level, buf);
+		syslog(level, buf);
 	}
 	else {
 		fflush(stdout); /* in case stdout and stderr are the same */
@@ -495,6 +383,3 @@ void err_sys(const char *fmt, ...)
 	va_end(ap);
 	exit(1);
 }
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////
-
