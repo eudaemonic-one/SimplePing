@@ -1,12 +1,13 @@
 # Simple Implementation of Ping tool for Linux OS
 
-Linux ping命令用于检测主机。
+Linux ping命令可以作为检查网络是否联通，分析和判定网络故障的基本工具。
 
-执行ping指令会使用ICMP传输协议，发出要求回应的信息，若远端主机的网络功能没有问题，就会回应该信息，因而得知该主机运作正常。
-语法
+PING（Packet Internet Groper）命令是向某个（些）IP地址发送一个包含有ICMP Echo消息的ICMP（Internet Control Messages Protocol）协议包，等待接收该节点返回的ICMP Echo reply消息的命令。
+
+**语法**
 
 > ping [-bdDfhnqrUvc][-c<完成次数>][-i<间隔秒数>][-p<范本样式>][-Q<服务质量>][-s<数据包大小>][-S<发送缓冲大小>][-t<存活数值>][w<超时时间>][W<发送超时>] [主机名称或IP地址]
-bdDfhnqrUvc:i:p:Q:s:S:t:w:W:
+
 **参数说明：**
 * -b
   * 解释：允许ping程序尝试连接一个广播地址。
