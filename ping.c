@@ -37,7 +37,8 @@ int main(int argc, char **argv)
 			printf("WARNING: pinging broadcast address.\n");
 			break;
 		case 'f':
-			interval = 0.1;
+			b_flood = TRUE;
+			interval = FLOOD_INTERVAL;
 			break;
 		case 'h':
 			printf("Usage: ping [-aAbBdDfhLnOqrRUvV] [-c count] [-i interval] [-I interface]\n            [-m mark] [-M pmtudisc_option] [-l preload] [-p pattern] [-Q tos]\n            [-s packetsize] [-S sndbuf] [-t ttl] [-T timestamp_option]\n            [-w deadline] [-W timeout] [hop1 ...] destination\n");
@@ -53,6 +54,12 @@ int main(int argc, char **argv)
 		case 'v':
 			verbose++;
 			b_verbose = TRUE;
+			break;
+		case 'V':
+			printf("ping utility, iputils-s20180702.\n");
+			break;
+		case 'U':
+			b_full_latency = TRUE;
 			break;
 		//WITH PARAMETERS
 		case 'c':
@@ -70,6 +77,9 @@ int main(int argc, char **argv)
 			if(interval < 0.2)
 				err_quit("ping: cannot flood; minimal interval allowed for user is 200ms.\n");
 			break;
+		case 'Q':
+			tos = atoi(optarg);
+			break;
 		case 'S':
 			sndbuf = atoi(optarg);
 			if(sndbuf <= 0)
@@ -86,15 +96,15 @@ int main(int argc, char **argv)
 			if(ttl < 1)
 				err_quit("ping: can't set unicast time-to-live: Invalid argument.\n");
 			break;
-		case 'W':
-			timeout = atof(optarg);
-			if(timeout < 0)
-				err_quit("ping: bad wait time.\n");
-			break;
 		case 'w':
 			deadline = atof(optarg);
 			if(deadline < 0)
 				err_quit("ping: bad deadline time.\n");
+			break;
+		case 'W':
+			timeout = atof(optarg);
+			if(timeout < 0)
+				err_quit("ping: bad wait time.\n");
 			break;
 		
 		//UNSPEC
@@ -108,7 +118,7 @@ int main(int argc, char **argv)
 	host = argv[optind];
 	
 	pid = getpid();
-	signal(SIGALRM, sig_alrm);
+	//signal(SIGALRM, sig_alrm);
 
 	ai = host_serv(host, NULL, 0, 0);
 	if(b_nonhostname == FALSE)
@@ -146,8 +156,6 @@ void readloop(void)
 	socklen_t len;
 	ssize_t n;
 	struct timeval tval;
-	struct timeval tval_start;
-	struct timeval tval_end;
 	struct timeval tval_curr;
 	struct timeval tval_last;
 	int tmp_nsent;
@@ -160,18 +168,20 @@ void readloop(void)
 
 	size = 60 * 1024;  /* OK if setsockopt fails */
 	setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, (const char *)&b_broadcast, sizeof(bool));//[-b]
+	setsockopt(sockfd, IPPROTO_IP, IP_TOS, (const char *)&tos, sizeof(tos));//[-Q tos]
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, (const char *)&size, sizeof(size));//[-s packetsize]
 	setsockopt(sockfd, IPPROTO_IP, IP_TTL, (const char *)&ttl, sizeof(ttl));//[-t ttl]
 	setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, (const char *)&sndbuf, sizeof(int));//[-S sndbuf]
 	//setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
 	//setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
+	
+	init_sigaction();
+	init_timer(interval);	
+	//sig_alrm(SIGALRM);  /* send first packet */
 
-	sig_alrm(SIGALRM);  /* send first packet */
-
-	for(;nsent < count;){//[-c count]
-		transmitted += 1;
-
+	for(;;){//[-c count]
 		len = pr->salen;
+		gettimeofday(&tval, NULL);
 		n = recvfrom(sockfd, recvbuf, sizeof(recvbuf), 0, pr->sarecv, &len);
 		gettimeofday(&tval_end, NULL);
 
@@ -190,17 +200,16 @@ void readloop(void)
 				err_sys("recvfrom error");
 		}
 
-		gettimeofday(&tval, NULL);
+		if(b_full_latency == TRUE)
+			gettimeofday(&tval, NULL);
+
 		(*pr->fproc)(recvbuf, n, &tval);//Output: icmp_sec & ttl & time
 		
-		received += 1;	
-	}
+		received += 1;
 
-	//transmitted /= 2;
-	//received /= 2;
-	tv_sub(&tval_end, &tval_start);
-	totaltime = tval_end.tv_sec * 1000.0 + tval_end.tv_usec / 1000.0;
-	loss = ((double)(transmitted - received)/(double)transmitted)*100;
+		if(nsent >= count)
+			break;
+	}
 
 	proc_rtt(0);//Output: ping statistics
 }
@@ -209,7 +218,7 @@ void readloop(void)
 void proc_v4(char *ptr, ssize_t len, struct timeval *tvrecv)
 {
 	int hlen1, icmplen;
-	double rtt;
+	double rtt, time;
 	struct ip  *ip;
 	struct icmp  *icmp;
 	struct timeval *tvsend;
@@ -221,24 +230,35 @@ void proc_v4(char *ptr, ssize_t len, struct timeval *tvrecv)
 	if ((icmplen = len - hlen1) < 8)
 		err_quit("icmplen (%d) < 8", icmplen);
 
-	if (icmp->icmp_type == ICMP_ECHOREPLY) {
-		if (icmp->icmp_id != pid)
+	if (icmp->icmp_type == ICMP_ECHOREPLY || b_verbose == TRUE) {//[-v]
+		if (icmp->icmp_id != pid && b_verbose == FALSE)
 			return; /* not a response to our ECHO_REQUEST */
 		if (icmplen < 16)
 			err_quit("icmplen (%d) < 16", icmplen);
 
 		tvsend = (struct timeval *) icmp->icmp_data;
 		tv_sub(tvrecv, tvsend);
-		rtt = tvrecv->tv_sec * 1000.0 + tvrecv->tv_usec / 1000.0;//Round-Trip time
+		rtt = time = tvrecv->tv_sec * 1000.0 + tvrecv->tv_usec / 1000.0;//Round-Trip time
 		rtt_list[icmp->icmp_seq] = rtt;
 		
-		if(b_quiet==FALSE)//[-q]
-			printf("%d bytes from %s: seq=%u, ttl=%d, rtt=%.3f ms\n",
-			icmplen, Sock_ntop_host(pr->sarecv, pr->salen),
-			icmp->icmp_seq, ip->ip_ttl, rtt);
+		if(b_quiet == FALSE) {//[-q]
+			if(b_flood == FALSE) {
+				if(b_full_latency == FALSE){
+					printf("%d bytes from %s: seq=%u, ttl=%d, rtt=%.3f ms\n", icmplen, Sock_ntop_host(pr->sarecv, pr->salen), icmp->icmp_seq, ip->ip_ttl, rtt);
+				}
+				else {
+					printf("%d bytes from %s: seq=%u, ttl=%d, time=%.3f ms\n", icmplen, Sock_ntop_host(pr->sarecv, pr->salen), icmp->icmp_seq, ip->ip_ttl, time);
+				}
+			}
+			else {
+				putchar('\b');
+				putchar(' ');	
+				putchar('\b');
+			}
+		}
 	}
 	else if (verbose) {
-		if(b_quiet==FALSE)//[-q]
+		if(b_quiet == FALSE)//[-q]
 			printf("  %d bytes from %s: type = %d, code = %d\n",
 			icmplen, Sock_ntop_host(pr->sarecv, pr->salen),
 			icmp->icmp_type, icmp->icmp_code);
@@ -270,9 +290,8 @@ void proc_v6(char *ptr, ssize_t len, struct timeval* tvrecv)
 	if ((icmp6len = len) < 8)   //len-40
 		err_quit("icmp6len (%d) < 8", icmp6len);
 
-
-	if (icmp6->icmp6_type == ICMP6_ECHO_REPLY) {
-		if (icmp6->icmp6_id != pid)
+	if (icmp6->icmp6_type == ICMP6_ECHO_REPLY || b_verbose == TRUE) {//[-v]
+		if (icmp6->icmp6_id != pid && b_verbose == FALSE)
 			return; /* not a response to our ECHO_REQUEST */
 		if (icmp6len < 16)
 			err_quit("icmp6len (%d) < 16", icmp6len);
@@ -302,6 +321,9 @@ void proc_rtt(int sig)
 	double rtt = 0.0;
 	double sum = 0.0;
 
+	tv_sub(&tval_end, &tval_start);
+	totaltime = tval_end.tv_sec * 1000.0 + tval_end.tv_usec / 1000.0;
+	loss = ((double)(transmitted - received)/(double)transmitted) * 100.0;
 	min = max = rtt_list[0];
 
 	for(i=0;i<nsent-1;i++){
@@ -317,8 +339,8 @@ void proc_rtt(int sig)
 	mdev = max - min;
 
 	printf("\n--- %s ping statistics ---\n",Sock_ntop_host(pr->sarecv, pr->salen));
-	printf("%d packets transmitted, %d received, %.3f%% packet loss, time %.3lf ms\n",transmitted,received,loss,totaltime);
-	printf("rtt min/avg/max/mdev = %.3lf/%.3lf/%.3lf/%.3lf\n\n",min,avg,max,mdev);
+	printf("%d packets transmitted, %d received, %.3f%% packet loss, time %.3lf ms\n",transmitted, received, loss, totaltime);
+	printf("rtt min/avg/max/mdev = %.3lf/%.3lf/%.3lf/%.3lf\n\n", min, avg, max, mdev);
 
 	exit(0);
 }
@@ -363,7 +385,6 @@ void send_v4(void)
 	icmp->icmp_code = 0;
 	icmp->icmp_id = pid;
 	icmp->icmp_seq = nsent++;
-	//icmp->icmp_ttl = ttl;//[-t ttl]
 	gettimeofday((struct timeval *) icmp->icmp_data, NULL);
 
 	len = 8 + datalen;  /* checksum ICMP header and data */
@@ -397,8 +418,15 @@ void sig_alrm(int signo)
 {
 	(*pr->fsend)();
 
-	alarm(interval);//[-i interval]
+	transmitted += 1;
+
+	if(b_flood == TRUE) {
+		putchar('.');
+		
+	}
+	//alarm(interval);//[-i interval]
 	//alarm(1);
+	
 	return; /* probably interrupts recvfrom() */
 }
 
@@ -532,4 +560,37 @@ void err_sys(const char *fmt, ...)
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void init_timer(double interval)
+{
+	struct itimerval value;
+	memset(&value, 0, sizeof(value));
+
+	value.it_value.tv_sec = 0;
+	value.it_value.tv_usec = 1000;
+
+	value.it_interval.tv_sec = (int)interval;//(int)interval;
+	value.it_interval.tv_usec = (int)((interval - (double)(value.it_interval.tv_sec)) * 1000000);
+
+	setitimer(ITIMER_REAL, &value, NULL);
+}
+
+void init_sigaction(void)
+{
+	struct sigaction tact;
+	tact.sa_handler = sig_alrm;
+	tact.sa_flags = 0;
+	sigemptyset(&tact.sa_mask);
+	sigaction(SIGALRM, &tact, NULL);
+}
+
+
+
+
+
+
+
+
+
+
 

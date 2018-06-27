@@ -37,7 +37,7 @@ char sendbuf[BUFSIZE];
 
 int datalen; /* #bytes of data, following ICMP header */
 char *host;
-int nsent;  /* add 1 for each sendto() */
+int nsent = 0;  /* add 1 for each sendto() */
 pid_t pid;  /* our PID */
 int sockfd;
 int verbose;
@@ -72,10 +72,15 @@ struct proto {
 #define TRUE 1
 #define FALSE 0
 #define bool int
+#define FLOOD_INTERVAL 0.005
 
 void proc_rtt(int);
+void init_timer(double interval);
+void init_sigaction(void);
 
 /*ping statistics*/
+struct timeval tval_start;
+struct timeval tval_end;
 int transmitted = 0;
 int received = 0;
 double loss = 0.0;
@@ -89,18 +94,21 @@ double mdev = 0.0;
 
 /*ping With-No-Parameter*/
 bool b_broadcast = FALSE;
+bool b_flood = FALSE;
 bool b_nonhostname = FALSE;
-bool b_verbose = FALSE;
 bool b_quiet = FALSE;
+bool b_verbose = FALSE;
+bool b_full_latency = FALSE;
 
 /*ping With-Parameters*/
-int count = 1000;//[-c count] (time)
+int count = 65535;//[-c count] (time)
 double interval = 1.0;//[-i interval] (s)
+int tos = 100;//[-Q tos] (degree)
 int sndbuf = BUFSIZE;//[-S sndbuf] (byte)
 int packetsize = 56;//[-s packetsize] (byte)
 int ttl = 64;//[-t ttl](time)
-int timeout = 6538;//[-W timeout] (ms)
-double deadline = 6538;//[-w deadline] (ms)
+int timeout = 65535;//[-W timeout] (ms)
+double deadline = 65535;//[-w deadline] (ms)
 
 
 
