@@ -6,12 +6,12 @@ struct proto proto_v4 = { proc_v4, send_v4, NULL, NULL, 0, IPPROTO_ICMP };
 struct proto proto_v6 = { proc_v6, send_v6, NULL, NULL, 0, IPPROTO_ICMPV6 };
 #endif
 
-int datalen = 56;  /* data that goes with ICMP echo request */
-
 int main(int argc, char **argv)
 {
-	int c;
-	struct addrinfo *ai;
+	int c = 0;
+	int hex = 0x0;
+	char str[5];
+	memset(str, 0, sizeof(str));
 
 	/*ping Usage: 
 	Usage: ping [-aAbBdDfhLnOqrRUvV] [-c count] [-i interval] [-I interface]
@@ -29,12 +29,16 @@ int main(int argc, char **argv)
 	(void)signal(SIGINT,proc_rtt);//CTRL+C
 
 	opterr = 0;
-	while ((c = getopt(argc, argv, "aAbBdDfhLnOqrRUvVc:i::I:m:M:l:p:Q:s:S:t:T:w:W:")) != -1) {
+	while ((c = getopt(argc, argv, "bfhnqrUvc:i:p:Q:s:S:t:w:W:")) != -1) {
 		switch (c) {
 		//WITH NO PARAMETER
 		case 'b':
 			b_broadcast = TRUE;
 			printf("WARNING: pinging broadcast address.\n");
+			break;
+		case 'd':
+			b_debug = TRUE;
+			printf("\n");
 			break;
 		case 'f':
 			b_flood = TRUE;
@@ -49,7 +53,9 @@ int main(int argc, char **argv)
 		case 'q':
 			b_quiet = TRUE;
 			break;
-		case 'R':
+		case 'r':
+			b_direct_routing = TRUE;
+			ttl = 2;
 			break;
 		case 'v':
 			verbose++;
@@ -63,11 +69,6 @@ int main(int argc, char **argv)
 			break;
 		//WITH PARAMETERS
 		case 'c':
-			//e.g. With Parameter
-			//printf("HAVE option: -%c\n",c);
-			//printf("The argument of -%c is %s\n", c, optarg);
-			//printf("%d\n\n",count);
-
 			count = atoi(optarg);
 			if(count <= 0)
 				err_quit("ping: bad number of packets to transmit.\n");
@@ -76,6 +77,12 @@ int main(int argc, char **argv)
 			interval = atof(optarg);
 			if(interval < 0.2)
 				err_quit("ping: cannot flood; minimal interval allowed for user is 200ms.\n");
+			break;
+		case 'p':
+			strcat(str,"0x");
+			strcat(str,optarg);
+			hex = htoi(str);
+			pattern = hex & 0x00ff;
 			break;
 		case 'Q':
 			tos = atoi(optarg);
@@ -95,18 +102,19 @@ int main(int argc, char **argv)
 			ttl = atoi(optarg);
 			if(ttl < 1)
 				err_quit("ping: can't set unicast time-to-live: Invalid argument.\n");
+			if(ttl == 1)
+				b_loopback = TRUE;
 			break;
 		case 'w':
 			deadline = atof(optarg);
 			if(deadline < 0)
-				err_quit("ping: bad deadline time.\n");
+				err_quit("ping: bad wait time.\n");
 			break;
 		case 'W':
 			timeout = atof(optarg);
 			if(timeout < 0)
 				err_quit("ping: bad wait time.\n");
 			break;
-		
 		//UNSPEC
 		case '?':
 			err_quit("unrecognized option: %c\n", c);
@@ -148,7 +156,6 @@ int main(int argc, char **argv)
 	exit(0);
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////
 void readloop(void)
 {
 	int size;
@@ -167,13 +174,12 @@ void readloop(void)
 	setuid(getuid());  /* don't need special permissions any more */
 
 	size = 60 * 1024;  /* OK if setsockopt fails */
-	setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, (const char *)&b_broadcast, sizeof(bool));//[-b]
+	setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, (const char *)&b_broadcast, sizeof(b_broadcast));//[-b]
+	setsockopt(sockfd, SOL_SOCKET, SO_DEBUG, (const char *)&b_debug, sizeof(b_debug));//[-d]
 	setsockopt(sockfd, IPPROTO_IP, IP_TOS, (const char *)&tos, sizeof(tos));//[-Q tos]
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, (const char *)&size, sizeof(size));//[-s packetsize]
 	setsockopt(sockfd, IPPROTO_IP, IP_TTL, (const char *)&ttl, sizeof(ttl));//[-t ttl]
 	setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, (const char *)&sndbuf, sizeof(int));//[-S sndbuf]
-	//setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
-	//setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(int));//[-W timeout]
 	
 	init_sigaction();
 	init_timer(interval);	
@@ -188,12 +194,17 @@ void readloop(void)
 		//[-w deadline]
 		gettimeofday(&tval_curr, NULL);
 		tv_sub(&tval_curr, &tval_start);
-		if(((&tval_curr)->tv_sec * 1000.0 + (&tval_curr)->tv_usec / 1000.0) > deadline*1000.0)
+		if(((&tval_curr)->tv_sec * 1000.0 + (&tval_curr)->tv_usec / 1000.0) > deadline * 1000.0)
 			break;
 
 		if (n < 0) {
 			if (errno == EINTR)
-			{			
+			{	
+				gettimeofday(&tval_recv, NULL);
+				tv_sub(&tval_recv, &tval_send);
+				if(((&tval_curr)->tv_sec * 1000.0 + (&tval_curr)->tv_usec / 1000.0) > timeout * 1.0) {
+					printf("ping: request timeout.\n");
+				}
 				continue;
 			}
 			else
@@ -213,7 +224,6 @@ void readloop(void)
 
 	proc_rtt(0);//Output: ping statistics
 }
-//////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void proc_v4(char *ptr, ssize_t len, struct timeval *tvrecv)
 {
@@ -326,7 +336,7 @@ void proc_rtt(int sig)
 	loss = ((double)(transmitted - received)/(double)transmitted) * 100.0;
 	min = max = rtt_list[0];
 
-	for(i=0;i<nsent-1;i++){
+	for(i = 0;i < received;i++){
 		rtt = rtt_list[i];
 		sum += rtt;
 		if(rtt < min)
@@ -382,7 +392,8 @@ void send_v4(void)
 
 	icmp = (struct icmp *) sendbuf;
 	icmp->icmp_type = ICMP_ECHO;
-	icmp->icmp_code = 0;
+	icmp->icmp_code = pattern;//[-p pattern]
+	//icmp->icmp_code = 0;
 	icmp->icmp_id = pid;
 	icmp->icmp_seq = nsent++;
 	gettimeofday((struct timeval *) icmp->icmp_data, NULL);
@@ -416,7 +427,11 @@ void send_v6()
 
 void sig_alrm(int signo)
 {
+	static int i = 0;
+
 	(*pr->fsend)();
+
+	gettimeofday(&tval_send, NULL);
 
 	transmitted += 1;
 
@@ -424,6 +439,14 @@ void sig_alrm(int signo)
 		putchar('.');
 		
 	}
+
+	if(b_loopback == TRUE) {
+		printf("From localhost (%s): seq=%u Time to live exceeded\n", Sock_ntop_host(ai->ai_addr, ai->ai_addrlen), i++);
+	}
+	else if(b_direct_routing == TRUE && received == 0) {
+		printf("ping: sendmsg: Network is unreachable.\n");
+	}
+
 	//alarm(interval);//[-i interval]
 	//alarm(1);
 	
@@ -559,8 +582,7 @@ void err_sys(const char *fmt, ...)
 	exit(1);
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////
-
+/*Self-defined*/
 void init_timer(double interval)
 {
 	struct itimerval value;
@@ -584,7 +606,31 @@ void init_sigaction(void)
 	sigaction(SIGALRM, &tact, NULL);
 }
 
-
+int tolower(int c)  
+{  
+    if (c >= 'A' && c <= 'Z')
+        return c + 'a' - 'A';
+    else
+        return c;
+}
+  
+int htoi(char s[])  
+{  
+    int i;  
+    int n = 0;  
+    if (s[0] == '0' && (s[1]=='x' || s[1]=='X'))
+        i = 2;
+    else
+        i = 0;
+    for (; (s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'z') || (s[i] >='A' && s[i] <= 'Z');++i)  
+    {  
+        if (tolower(s[i]) > '9')
+            n = 16 * n + (10 + tolower(s[i]) - 'a');
+        else
+            n = 16 * n + (tolower(s[i]) - '0');
+    }  
+    return n;  
+}  
 
 
 

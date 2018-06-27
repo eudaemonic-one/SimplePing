@@ -35,13 +35,15 @@
 char recvbuf[BUFSIZE];
 char sendbuf[BUFSIZE];
 
-int datalen; /* #bytes of data, following ICMP header */
+int datalen = 56; /* #bytes of data, following ICMP header */
 char *host;
 int nsent = 0;  /* add 1 for each sendto() */
 pid_t pid;  /* our PID */
 int sockfd;
 int verbose;
 int daemon_proc;  /* set nonzero by daemon_init() */
+
+struct addrinfo *ai;
 
 /* function prototypes */
 void proc_v4(char *, ssize_t, struct timeval *);
@@ -72,15 +74,19 @@ struct proto {
 #define TRUE 1
 #define FALSE 0
 #define bool int
-#define FLOOD_INTERVAL 0.005
+#define FLOOD_INTERVAL 0.01
 
 void proc_rtt(int);
 void init_timer(double interval);
 void init_sigaction(void);
+int tolower(int c);
+int htoi(char s[]);
 
 /*ping statistics*/
 struct timeval tval_start;
 struct timeval tval_end;
+struct timeval tval_send;
+struct timeval tval_recv;
 int transmitted = 0;
 int received = 0;
 double loss = 0.0;
@@ -94,15 +100,19 @@ double mdev = 0.0;
 
 /*ping With-No-Parameter*/
 bool b_broadcast = FALSE;
+bool b_debug = FALSE;
 bool b_flood = FALSE;
+bool b_loopback = FALSE;
 bool b_nonhostname = FALSE;
 bool b_quiet = FALSE;
+bool b_direct_routing = FALSE;
 bool b_verbose = FALSE;
 bool b_full_latency = FALSE;
 
 /*ping With-Parameters*/
-int count = 65535;//[-c count] (time)
+int count = 4096;//[-c count] (time)
 double interval = 1.0;//[-i interval] (s)
+unsigned char pattern = 0x00;//[-p pattern] (hex)
 int tos = 100;//[-Q tos] (degree)
 int sndbuf = BUFSIZE;//[-S sndbuf] (byte)
 int packetsize = 56;//[-s packetsize] (byte)
