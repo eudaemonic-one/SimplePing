@@ -71,16 +71,49 @@ struct proto {
 
 
 /*Self-defined*/
-#define TRUE 1
-#define FALSE 0
+
+/*Constants*/
 #define bool int
+const int TRUE = 1;
+const int FALSE = 0;
+
+/*Constant Parameters*/
+#define SNAPSHOT "s20180702"
 #define FLOOD_INTERVAL 0.01
 
-void proc_rtt(int);
-void init_timer(double interval);
-void init_sigaction(void);
-int tolower(int c);
-int htoi(char s[]);
+/*ping option*/
+int opt = 0;
+#define	OPTION_AUDIBLE		0x0001
+#define	OPTION_BROADCAST	0x0002
+#define	OPTION_STRICTSOURCE	0x0004
+#define	OPTION_SO_DEBUG		0x0008
+#define	OPTION_PTIMEOFDAY	0x0010
+#define	OPTION_FLOOD		0x0020
+#define	OPTION_INTERVAL		0x0040
+#define	OPTION_NUMERIC		0x0080
+#define	OPTION_FILLED		0x0100
+#define	OPTION_QUIET		0x0200
+#define	OPTION_DIRECTROUTE	0x0400
+#define	OPTION_PROUTE		0x0800
+#define	OPTION_LOOPBACK		0x1000
+#define	OPTION_TIMESTAMP	0x2000
+#define	OPTION_FULLLATENCY	0x4000
+#define	OPTION_VERBOSE		0x8000
+
+/*ping With-No-Parameter*/
+int route_option = 0;
+int timestamp_type = 0;
+
+/*ping With-Parameters*/
+int count = 4096;//[-c count] (time)
+double interval = 1.0;//[-i interval] (s)
+unsigned char pattern = 0xff;//[-p pattern] (hex)
+int tos = 0;//[-Q tos] (degree)
+int sndbuf = BUFSIZE;//[-S sndbuf] (byte)
+int packetsize = 56;//[-s packetsize] (byte)
+int ttl = 64;//[-t ttl](time)
+int timeout = 65535;//[-W timeout] (ms)
+double deadline = 65535;//[-w deadline] (ms)
 
 /*ping statistics*/
 struct timeval tval_start;
@@ -91,6 +124,7 @@ int transmitted = 0;
 int received = 0;
 double loss = 0.0;
 double totaltime = 0.0;
+double timestamp = 0.0;
 
 double rtt_list[BUFSIZE];
 double min = 0.0;
@@ -98,28 +132,13 @@ double avg = 0.0;
 double max = 0.0;
 double mdev = 0.0;
 
-/*ping With-No-Parameter*/
-bool b_broadcast = FALSE;
-bool b_debug = FALSE;
-bool b_flood = FALSE;
-bool b_loopback = FALSE;
-bool b_nonhostname = FALSE;
-bool b_quiet = FALSE;
-bool b_direct_routing = FALSE;
-bool b_verbose = FALSE;
-bool b_full_latency = FALSE;
-
-/*ping With-Parameters*/
-int count = 4096;//[-c count] (time)
-double interval = 1.0;//[-i interval] (s)
-unsigned char pattern = 0x00;//[-p pattern] (hex)
-int tos = 100;//[-Q tos] (degree)
-int sndbuf = BUFSIZE;//[-S sndbuf] (byte)
-int packetsize = 56;//[-s packetsize] (byte)
-int ttl = 64;//[-t ttl](time)
-int timeout = 65535;//[-W timeout] (ms)
-double deadline = 65535;//[-w deadline] (ms)
-
+/*Functions*/
+void print_usage(void);
+void proc_rtt(int);
+void init_timer(double interval);
+void init_sigaction(void);
+int tolower(int c);
+int htoi(char s[]);
 
 
 

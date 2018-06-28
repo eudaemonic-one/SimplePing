@@ -20,7 +20,6 @@ int main(int argc, char **argv)
             [-w deadline] [-W timeout] [hop1 ...] destination
 	*/
 
-
 	//getopt()
 	//optind-cursor of next parameter
 	//opterr-whether or not output error information into stderr
@@ -29,68 +28,66 @@ int main(int argc, char **argv)
 	(void)signal(SIGINT,proc_rtt);//CTRL+C
 
 	opterr = 0;
-	while ((c = getopt(argc, argv, "bfhnqrUvc:i:p:Q:s:S:t:w:W:")) != -1) {
+	while ((c = getopt(argc, argv, "abBdDfhnqrRUvc:i:p:Q:s:S:t:T:w:W:")) != -1) {
 		switch (c) {
-		//WITH NO PARAMETER
+		case 'a':
+			opt |= OPTION_AUDIBLE;
+			break;
 		case 'b':
-			b_broadcast = TRUE;
+			opt |= OPTION_BROADCAST;
 			printf("WARNING: pinging broadcast address.\n");
 			break;
-		case 'd':
-			b_debug = TRUE;
-			printf("\n");
+		case 'B':
+			opt |= OPTION_STRICTSOURCE;
 			break;
-		case 'f':
-			b_flood = TRUE;
-			interval = FLOOD_INTERVAL;
-			break;
-		case 'h':
-			printf("Usage: ping [-aAbBdDfhLnOqrRUvV] [-c count] [-i interval] [-I interface]\n            [-m mark] [-M pmtudisc_option] [-l preload] [-p pattern] [-Q tos]\n            [-s packetsize] [-S sndbuf] [-t ttl] [-T timestamp_option]\n            [-w deadline] [-W timeout] [hop1 ...] destination\n");
-			break;
-		case 'n':
-			b_nonhostname = TRUE;
-			break;
-		case 'q':
-			b_quiet = TRUE;
-			break;
-		case 'r':
-			b_direct_routing = TRUE;
-			ttl = 2;
-			break;
-		case 'v':
-			verbose++;
-			b_verbose = TRUE;
-			break;
-		case 'V':
-			printf("ping utility, iputils-s20180702.\n");
-			break;
-		case 'U':
-			b_full_latency = TRUE;
-			break;
-		//WITH PARAMETERS
 		case 'c':
 			count = atoi(optarg);
 			if(count <= 0)
 				err_quit("ping: bad number of packets to transmit.\n");
+		case 'd':
+			opt |= OPTION_SO_DEBUG;
+			break;
+		case 'D':
+			opt |= OPTION_PTIMEOFDAY;
+			break;
+		case 'f':
+			opt |= OPTION_FLOOD;
+			opt |= OPTION_NUMERIC;
+			interval = FLOOD_INTERVAL;
+			break;
+		case 'h':
+			print_usage();
 			break;
 		case 'i':
+			opt |= OPTION_INTERVAL;
 			interval = atof(optarg);
 			if(interval < 0.2)
 				err_quit("ping: cannot flood; minimal interval allowed for user is 200ms.\n");
 			break;
+		case 'n':
+			opt |= OPTION_NUMERIC;
+			break;
 		case 'p':
+			opt |= OPTION_FILLED;
 			strcat(str,"0x");
 			strcat(str,optarg);
 			hex = htoi(str);
 			pattern = hex & 0x00ff;
 			break;
+		case 'q':
+			opt |= OPTION_QUIET;
+			break;
 		case 'Q':
 			tos = atoi(optarg);
 			break;
-		case 'S':
-			sndbuf = atoi(optarg);
-			if(sndbuf <= 0)
-				err_quit("ping: bad sndbuf value.\n");
+		case 'r':
+			opt |= OPTION_DIRECTROUTE;
+			ttl = 2;
+			break;
+		case 'R':
+			opt |= OPTION_PROUTE;
+			if(opt & OPTION_TIMESTAMP)
+				err_quit("Only one of -T or -R may be used.\n");
 			break;
 		case 's':
 			packetsize = atoi(optarg);
@@ -98,12 +95,42 @@ int main(int argc, char **argv)
 			if(packetsize < 0 || packetsize > 65507)
 				err_quit("ping: illegal negative packet size -1.\n");
 			break;
+		case 'S':
+			sndbuf = atoi(optarg);
+			if(sndbuf <= 0)
+				err_quit("ping: bad sndbuf value.\n");
+			break;
 		case 't':
 			ttl = atoi(optarg);
 			if(ttl < 1)
 				err_quit("ping: can't set unicast time-to-live: Invalid argument.\n");
 			if(ttl == 1)
-				b_loopback = TRUE;
+				opt |= OPTION_LOOPBACK;
+			break;
+		case 'T':
+			opt |= OPTION_TIMESTAMP;
+			if(opt & OPTION_PROUTE)
+				err_quit("Only one of -T or -R may be used.\n");;
+
+			if(strcmp(optarg, "tsonly")==0)
+				timestamp_type = IPOPT_TS_TSONLY;
+			else if(strcmp(optarg, "tsandaddr")==0)
+				timestamp_type = IPOPT_TS_TSANDADDR;
+			else if(strcmp(optarg, "tsprespec")==0)
+				timestamp_type = IPOPT_TS_PRESPEC;
+			else
+				err_quit("Invalid timestamp type.\n");
+			break;
+		case 'U':
+			opt |= OPTION_FULLLATENCY;
+			break;
+		case 'v':
+			opt |= OPTION_VERBOSE;
+			verbose++;
+			break;
+		case 'V':
+			printf("ping utility, iputils-%s.\n", SNAPSHOT);
+			return 0;
 			break;
 		case 'w':
 			deadline = atof(optarg);
@@ -115,7 +142,6 @@ int main(int argc, char **argv)
 			if(timeout < 0)
 				err_quit("ping: bad wait time.\n");
 			break;
-		//UNSPEC
 		case '?':
 			err_quit("unrecognized option: %c\n", c);
 		}
@@ -129,7 +155,7 @@ int main(int argc, char **argv)
 	//signal(SIGALRM, sig_alrm);
 
 	ai = host_serv(host, NULL, 0, 0);
-	if(b_nonhostname == FALSE)
+	if(!(opt & OPTION_NUMERIC))
 		printf("ping %s (%s): %d data bytes\n", ai->ai_canonname, Sock_ntop_host(ai->ai_addr, ai->ai_addrlen), datalen);
 	else 
 		printf("ping %s: %d data bytes\n",  Sock_ntop_host(ai->ai_addr, ai->ai_addrlen), datalen);
@@ -174,12 +200,13 @@ void readloop(void)
 	setuid(getuid());  /* don't need special permissions any more */
 
 	size = 60 * 1024;  /* OK if setsockopt fails */
-	setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, (const char *)&b_broadcast, sizeof(b_broadcast));//[-b]
-	setsockopt(sockfd, SOL_SOCKET, SO_DEBUG, (const char *)&b_debug, sizeof(b_debug));//[-d]
+	setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, (const char *)&TRUE, sizeof(TRUE));//[-b]
+	setsockopt(sockfd, SOL_SOCKET, SO_DEBUG, (const char *)&TRUE, sizeof(TRUE));//[-d]
 	setsockopt(sockfd, IPPROTO_IP, IP_TOS, (const char *)&tos, sizeof(tos));//[-Q tos]
+	setsockopt(sockfd, IPPROTO_IP, IP_OPTIONS, (const char *)&route_option, sizeof(route_option));//[-R]
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, (const char *)&size, sizeof(size));//[-s packetsize]
-	setsockopt(sockfd, IPPROTO_IP, IP_TTL, (const char *)&ttl, sizeof(ttl));//[-t ttl]
 	setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, (const char *)&sndbuf, sizeof(int));//[-S sndbuf]
+	setsockopt(sockfd, IPPROTO_IP, IP_TTL, (const char *)&ttl, sizeof(ttl));//[-t ttl]
 	
 	init_sigaction();
 	init_timer(interval);	
@@ -211,7 +238,7 @@ void readloop(void)
 				err_sys("recvfrom error");
 		}
 
-		if(b_full_latency == TRUE)
+		if(opt & OPTION_FULLLATENCY)
 			gettimeofday(&tval, NULL);
 
 		(*pr->fproc)(recvbuf, n, &tval);//Output: icmp_sec & ttl & time
@@ -232,6 +259,7 @@ void proc_v4(char *ptr, ssize_t len, struct timeval *tvrecv)
 	struct ip  *ip;
 	struct icmp  *icmp;
 	struct timeval *tvsend;
+	struct timeval tval_timestamp;
 
 	ip = (struct ip *) ptr;  /* start of IP header */
 	hlen1 = ip->ip_hl << 2;  /* length of IP header */
@@ -240,8 +268,8 @@ void proc_v4(char *ptr, ssize_t len, struct timeval *tvrecv)
 	if ((icmplen = len - hlen1) < 8)
 		err_quit("icmplen (%d) < 8", icmplen);
 
-	if (icmp->icmp_type == ICMP_ECHOREPLY || b_verbose == TRUE) {//[-v]
-		if (icmp->icmp_id != pid && b_verbose == FALSE)
+	if (icmp->icmp_type == ICMP_ECHOREPLY || (opt & OPTION_VERBOSE)) {//[-v]
+		if (icmp->icmp_id != pid && !(opt & OPTION_VERBOSE))
 			return; /* not a response to our ECHO_REQUEST */
 		if (icmplen < 16)
 			err_quit("icmplen (%d) < 16", icmplen);
@@ -251,9 +279,18 @@ void proc_v4(char *ptr, ssize_t len, struct timeval *tvrecv)
 		rtt = time = tvrecv->tv_sec * 1000.0 + tvrecv->tv_usec / 1000.0;//Round-Trip time
 		rtt_list[icmp->icmp_seq] = rtt;
 		
-		if(b_quiet == FALSE) {//[-q]
-			if(b_flood == FALSE) {
-				if(b_full_latency == FALSE){
+		if(opt & OPTION_AUDIBLE)
+			putchar('\a');
+
+		if(!(opt & OPTION_QUIET)) {//[-q]
+			if(!(opt & OPTION_FLOOD)) {
+				if(opt & OPTION_TIMESTAMP){
+					gettimeofday(&tval_timestamp, NULL);
+					timestamp = tval_timestamp.tv_sec + tval_timestamp.tv_usec / 1000000.0;
+					printf("[%.6lf] ", timestamp);
+				}
+
+				if(!(opt & OPTION_FULLLATENCY)){
 					printf("%d bytes from %s: seq=%u, ttl=%d, rtt=%.3f ms\n", icmplen, Sock_ntop_host(pr->sarecv, pr->salen), icmp->icmp_seq, ip->ip_ttl, rtt);
 				}
 				else {
@@ -268,7 +305,7 @@ void proc_v4(char *ptr, ssize_t len, struct timeval *tvrecv)
 		}
 	}
 	else if (verbose) {
-		if(b_quiet == FALSE)//[-q]
+		if(!(opt & OPTION_QUIET))//[-q]
 			printf("  %d bytes from %s: type = %d, code = %d\n",
 			icmplen, Sock_ntop_host(pr->sarecv, pr->salen),
 			icmp->icmp_type, icmp->icmp_code);
@@ -300,8 +337,8 @@ void proc_v6(char *ptr, ssize_t len, struct timeval* tvrecv)
 	if ((icmp6len = len) < 8)   //len-40
 		err_quit("icmp6len (%d) < 8", icmp6len);
 
-	if (icmp6->icmp6_type == ICMP6_ECHO_REPLY || b_verbose == TRUE) {//[-v]
-		if (icmp6->icmp6_id != pid && b_verbose == FALSE)
+	if (icmp6->icmp6_type == ICMP6_ECHO_REPLY || (opt & OPTION_VERBOSE)) {//[-v]
+		if (icmp6->icmp6_id != pid && !(opt & OPTION_VERBOSE))
 			return; /* not a response to our ECHO_REQUEST */
 		if (icmp6len < 16)
 			err_quit("icmp6len (%d) < 16", icmp6len);
@@ -309,7 +346,6 @@ void proc_v6(char *ptr, ssize_t len, struct timeval* tvrecv)
 		tvsend = (struct timeval *) (icmp6 + 1);
 		tv_sub(tvrecv, tvsend);
 		rtt = tvrecv->tv_sec * 1000.0 + tvrecv->tv_usec / 1000.0;
-		//rtt_list[icmp6->icmp_seq] = rtt;
 
 		sleep(interval);
 
@@ -323,36 +359,6 @@ void proc_v6(char *ptr, ssize_t len, struct timeval* tvrecv)
 			icmp6->icmp6_type, icmp6->icmp6_code);
 	}
 #endif /* IPV6 */
-}
-
-void proc_rtt(int sig)
-{
-	int i = 0;
-	double rtt = 0.0;
-	double sum = 0.0;
-
-	tv_sub(&tval_end, &tval_start);
-	totaltime = tval_end.tv_sec * 1000.0 + tval_end.tv_usec / 1000.0;
-	loss = ((double)(transmitted - received)/(double)transmitted) * 100.0;
-	min = max = rtt_list[0];
-
-	for(i = 0;i < received;i++){
-		rtt = rtt_list[i];
-		sum += rtt;
-		if(rtt < min)
-			min = rtt;
-		else if (rtt > max)
-			max = rtt;
-	}
-
-	avg = sum / received;
-	mdev = max - min;
-
-	printf("\n--- %s ping statistics ---\n",Sock_ntop_host(pr->sarecv, pr->salen));
-	printf("%d packets transmitted, %d received, %.3f%% packet loss, time %.3lf ms\n",transmitted, received, loss, totaltime);
-	printf("rtt min/avg/max/mdev = %.3lf/%.3lf/%.3lf/%.3lf\n\n", min, avg, max, mdev);
-
-	exit(0);
 }
 
 unsigned short in_cksum(unsigned short *addr, int len)
@@ -435,15 +441,15 @@ void sig_alrm(int signo)
 
 	transmitted += 1;
 
-	if(b_flood == TRUE) {
+	if(opt & OPTION_FLOOD) {
 		putchar('.');
 		
 	}
 
-	if(b_loopback == TRUE) {
+	if(opt & OPTION_LOOPBACK) {
 		printf("From localhost (%s): seq=%u Time to live exceeded\n", Sock_ntop_host(ai->ai_addr, ai->ai_addrlen), i++);
 	}
-	else if(b_direct_routing == TRUE && received == 0) {
+	else if((opt & OPTION_DIRECTROUTE) && received == 0) {
 		printf("ping: sendmsg: Network is unreachable.\n");
 	}
 
@@ -556,9 +562,6 @@ static void err_doit(int errnoflag, int level, const char *fmt, va_list ap)
 	return;
 }
 
-/* Fatal error unrelated to a system call.
- * Print a message and terminate. */
-
 void err_quit(const char *fmt, ...)
 {
 	va_list ap;
@@ -568,9 +571,6 @@ void err_quit(const char *fmt, ...)
 	va_end(ap);
 	exit(1);
 }
-
-/* Fatal error related to a system call.
- * Print a message and terminate. */
 
 void err_sys(const char *fmt, ...)
 {
@@ -583,6 +583,42 @@ void err_sys(const char *fmt, ...)
 }
 
 /*Self-defined*/
+
+void print_usage(void)
+{
+	printf("Usage: ping [-aAbBdDfhLnOqrRUvV] [-c count] [-i interval] [-I interface]\n            [-m mark] [-M pmtudisc_option] [-l preload] [-p pattern] [-Q tos]\n            [-s packetsize] [-S sndbuf] [-t ttl] [-T timestamp_option]\n            [-w deadline] [-W timeout] [hop1 ...] destination\n");
+}
+
+void proc_rtt(int sig)
+{
+	int i = 0;
+	double rtt = 0.0;
+	double sum = 0.0;
+
+	tv_sub(&tval_end, &tval_start);
+	totaltime = tval_end.tv_sec * 1000.0 + tval_end.tv_usec / 1000.0;
+	loss = ((double)(transmitted - received)/(double)transmitted) * 100.0;
+	min = max = rtt_list[0];
+
+	for(i = 0;i < received;i++){
+		rtt = rtt_list[i];
+		sum += rtt;
+		if(rtt < min)
+			min = rtt;
+		else if (rtt > max)
+			max = rtt;
+	}
+
+	avg = sum / received;
+	mdev = max - min;
+
+	printf("\n--- %s ping statistics ---\n",Sock_ntop_host(pr->sarecv, pr->salen));
+	printf("%d packets transmitted, %d received, %.3f%% packet loss, time %.3lf ms\n",transmitted, received, loss, totaltime);
+	printf("rtt min/avg/max/mdev = %.3lf/%.3lf/%.3lf/%.3lf\n\n", min, avg, max, mdev);
+
+	exit(0);
+}
+
 void init_timer(double interval)
 {
 	struct itimerval value;
@@ -631,8 +667,6 @@ int htoi(char s[])
     }  
     return n;  
 }  
-
-
 
 
 
