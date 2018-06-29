@@ -10,22 +10,22 @@ PING（Packet Internet Groper）命令是向某个（些）IP地址发送一个�
 
 **参数说明：**
 * **-a**
-  * 解释：允许ping程序。
+  * 解释：ping程序每收到一个返回的ICMP数据包蜂鸣一次。
   * 参数：无。
   * 输入样例：ping 127.0.0.1 -a
-  * 预期结果：收到来自本机所在网段的其他主机返回的ICMP包并输出数据报信息。
+  * 预期结果：收到来自环回接口127.0.0.1返回的包含ECHO_RESPONSE信息的ICMP数据报，在输出数据报信息的同时蜂鸣。
 
 * **-b**
   * 解释：允许ping程序尝试连接一个广播地址。
   * 参数：无。
   * 输入样例：ping 255.255.255.255 -b
-  * 预期结果：。
+  * 预期结果：按照默认间隔时间1s发送ICMP数据报到广播地址，收到来自本地网络的所有可到达的主机返回的包含ECHO_RESPONSE信息的ICMP数据报，并输出数据报信息。
 
 * **-B**
-  * 解释：。
+  * 解释：不允许ping程序更改源地址探针。地址被绑定为ping程序开始的地址。
   * 参数：无。
   * 输入样例：ping 192.168.1.128 -B **（注：192.168.1.128为本地网络中可以连接的主机地址）**
-  * 预期结果：。
+  * 预期结果：IP包头的源地址不改变。
 
 * **-c count**
   * 解释：在发送指定数目count个ECHO_REQUEST数据报后停止。
@@ -44,7 +44,7 @@ PING（Packet Internet Groper）命令是向某个（些）IP地址发送一个�
   * 解释：在每行之前打印时间戳。
   * 参数：无。
   * 输入样例：ping 127.0.0.1 -D
-  * 预期结果：按照默认间隔时间1s发送ICMP包到指定的 www.baidu.com ，收到来自环回接口127.0.0.1返回的包含ECHO_RESPONSE信息的ICMP数据报，并先后输出时间戳和对应收到的数据报信息，。
+  * 预期结果：按照默认间隔时间1s发送ICMP包到环回接口127.0.0.1 ，收到来自环回接口127.0.0.1返回的包含ECHO_RESPONSE信息的ICMP数据报，并先后输出时间戳和对应收到的数据报信息。
 
 * **-f**
 解释：极限检测ping。对任意ECHO_REQUEST发送打印一个‘.’，当收到任意一个ECHO_REPLY的ICMP数据报时回退一个字符位。这个选项提供了快速展示数据报丢失的原  * 因。
@@ -64,11 +64,11 @@ PING（Packet Internet Groper）命令是向某个（些）IP地址发送一个�
   * 输入样例：ping 192.168.1.128 -i5
   * 预期结果：按照5秒的时间间隔定时发送ICMP数据报到环回接口，收到来自指定的IP地址192.168.1.128返回的包含ECHO_RESPONSE信息的ICMP数据报，并输出数据报信息。
 
-* **-l preload **
-  * 解释：。
+* **-l preload**
+  * 解释：如果preload值被指定，ping程序在不等待回复的情况下预先发送preload个数据报。
   * 参数：int preload
-  * 输入样例：ping 192.168.1.128 -i5
-  * 预期结果：。
+  * 输入样例：ping 192.168.1.128 -l5
+  * 预期结果：按照默认间隔时间1s发送ICMP包到指定的192.168.1.128 ，先后收到共计5个数据报（其中3个为初始阶段直接发送的ICMP数据报）收到来自192.168.1.128返回的包含ECHO_RESPONSE信息的ICMP数据报，并输出数据报信息。
 
 * **-n**
   * 解释：只输出主机地址的数码形式，不会尝试去寻找主机的符号名。
@@ -101,10 +101,10 @@ PING（Packet Internet Groper）命令是向某个（些）IP地址发送一个�
   * 预期结果：尝试连接不在本地网络的主机 www.baidu.com 时每发送一个包含ECHO_REQUEST的ICMP数据报时输出“Network is unreachable”表示该网络不可达。
 
 * **-R**
-  * 解释：。
+  * 解释：记录路由。在ECHO_REQUEST的ICMP数据报中包含记录路由的选项和展示返回数据报的路由缓存。注意：IP包头最大只能容量9个这样的路由。许多主机忽略这个选项。
   * 参数：无。
   * 输入样例：ping www.baidu.com -R
-  * 预期结果：。
+  * 预期结果：按照默认间隔时间1s发送ICMP数据报到 www.baidu.com ，收到来自 www.baidu.com 返回的包含ECHO_RESPONSE信息和路由缓存的ICMP数据报，并输出数据报信息和路由路径。
 
 * **-s packetsize**
   * 解释：明确发送的数据字节数packetsize。默认值为56，该数据报在添加ICMP头部的8字节数据后被转换为64字节的ICMP数据。
@@ -125,10 +125,10 @@ PING（Packet Internet Groper）命令是向某个（些）IP地址发送一个�
   * 预期结果：收到默认生存时间值ttl为128的包含ECHO_REPLY的ICMP数据报。
 
 * **-T timestamp_option**
-  * 解释：。
+  * 解释：设置特殊的IP时间戳选项。时间戳选项只能是“tsonly”（时间戳）、“tsandaddr”（时间戳和地址）、“tsprespec host1[host2 [host3 [host4]]]”（时间戳可以预先确定的下一跳）中的一种。
   * 参数：string timestamp_option
   * 输入样例：ping www.baidu.com -T "tsonly"
-  * 预期结果：收到默认生存时间值ttl为128的包含ECHO_REPLY的ICMP数据报。
+  * 预期结果：收到包含ECHO_REPLY的ICMP数据报后在每一行前部只打印Unix时间戳。
 
 * **-v**
   * 解释：冗余输出。打印除了包含ECHO_RESPONSE的ICMP数据报，和所有返回的ICMP数据报。
