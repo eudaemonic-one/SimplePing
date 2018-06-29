@@ -14,10 +14,9 @@ int main(int argc, char **argv)
 	memset(str, 0, sizeof(str));
 
 	/*ping Usage: 
-	Usage: ping [-aAbBdDfhLnOqrRUvV] [-c count] [-i interval] [-I interface]
-            [-m mark] [-M pmtudisc_option] [-l preload] [-p pattern] [-Q tos]
-            [-s packetsize] [-S sndbuf] [-t ttl] [-T timestamp_option]
-            [-w deadline] [-W timeout] [hop1 ...] destination
+	Usage: ping [-abBdDfhnqrRUvV] [-c count] [-i interval] [-l preload]
+            [-p pattern] [-Q tos] [-s packetsize] [-S sndbuf] [-t ttl]
+            [-T timestamp_option] [-w deadline] [-W timeout] [hop1 ...] destination
 	*/
 
 	//getopt()
@@ -28,7 +27,7 @@ int main(int argc, char **argv)
 	(void)signal(SIGINT,proc_rtt);//CTRL+C
 
 	opterr = 0;
-	while ((c = getopt(argc, argv, "abBdDfhnqrRUvc:i:p:Q:s:S:t:T:w:W:")) != -1) {
+	while ((c = getopt(argc, argv, "abBdDfhnqrRUvVc:i:l:p:Q:s:S:t:T:w:W:")) != -1) {
 		switch (c) {
 		case 'a':
 			opt |= OPTION_AUDIBLE;
@@ -54,6 +53,7 @@ int main(int argc, char **argv)
 			opt |= OPTION_FLOOD;
 			opt |= OPTION_NUMERIC;
 			interval = FLOOD_INTERVAL;
+			setbuf(stdout, (char *)NULL);
 			break;
 		case 'h':
 			print_usage();
@@ -64,11 +64,17 @@ int main(int argc, char **argv)
 			if(interval < 0.2)
 				err_quit("ping: cannot flood; minimal interval allowed for user is 200ms.\n");
 			break;
+		case 'l':
+			preload = atoi(optarg);
+			if(interval > 3)
+				err_quit("ping: bad preload value.\n");
+			break;
 		case 'n':
 			opt |= OPTION_NUMERIC;
 			break;
 		case 'p':
 			opt |= OPTION_FILLED;
+			memset(str, 0, sizeof(str));
 			strcat(str,"0x");
 			strcat(str,optarg);
 			hex = htoi(str);
@@ -78,7 +84,12 @@ int main(int argc, char **argv)
 			opt |= OPTION_QUIET;
 			break;
 		case 'Q':
-			tos = atoi(optarg);
+			memset(str, 0, sizeof(str));
+			if(is_hex(optarg) == TRUE) {
+				strcat(str,"0x");
+			}
+			strcat(str, optarg);
+			tos = parse_tos(str);
 			break;
 		case 'r':
 			opt |= OPTION_DIRECTROUTE;
@@ -184,6 +195,7 @@ int main(int argc, char **argv)
 
 void readloop(void)
 {
+	int i = 0;
 	int size;
 	char recvbuf[BUFSIZE];
 	socklen_t len;
@@ -191,7 +203,7 @@ void readloop(void)
 	struct timeval tval;
 	struct timeval tval_curr;
 	struct timeval tval_last;
-	int tmp_nsent;
+	char route_space[3 + 4 * NROUTES + 1];
 
 	gettimeofday(&tval_start, NULL);
 	gettimeofday(&tval_last, NULL);
@@ -200,17 +212,38 @@ void readloop(void)
 	setuid(getuid());  /* don't need special permissions any more */
 
 	size = 60 * 1024;  /* OK if setsockopt fails */
-	setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, (const char *)&TRUE, sizeof(TRUE));//[-b]
-	setsockopt(sockfd, SOL_SOCKET, SO_DEBUG, (const char *)&TRUE, sizeof(TRUE));//[-d]
+
+	//[-B]
+	if(opt & OPTION_STRICTSOURCE) {
+		bind(sockfd, (struct sockaddr *)&(pr->sasend), sizeof (pr->sasend));
+	}
+
+	//[-R]
+	if (opt & OPTION_PROUTE) {
+		memset(route_space, 0, sizeof(route_space));
+		//route_space[0] = IPOPT_NOP;
+		route_space[IPOPT_OPTVAL] = IPOPT_RR;
+		route_space[IPOPT_OLEN] = sizeof(route_space) - 1;
+		route_space[IPOPT_OFFSET] = IPOPT_MINOFF;
+		optlen = 40;
+		setsockopt(sockfd, IPPROTO_IP, IP_OPTIONS, route_space, sizeof(route_space));
+	}
+	
+ 	if(opt & OPTION_BROADCAST)
+		setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, (const char *)&TRUE, sizeof(TRUE));//[-b]
+	if(opt & OPTION_SO_DEBUG)
+		setsockopt(sockfd, SOL_SOCKET, SO_DEBUG, (const char *)&TRUE, sizeof(TRUE));//[-d]
 	setsockopt(sockfd, IPPROTO_IP, IP_TOS, (const char *)&tos, sizeof(tos));//[-Q tos]
-	setsockopt(sockfd, IPPROTO_IP, IP_OPTIONS, (const char *)&route_option, sizeof(route_option));//[-R]
-	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, (const char *)&size, sizeof(size));//[-s packetsize]
 	setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, (const char *)&sndbuf, sizeof(int));//[-S sndbuf]
 	setsockopt(sockfd, IPPROTO_IP, IP_TTL, (const char *)&ttl, sizeof(ttl));//[-t ttl]
+	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, (const char *)&size, sizeof(size));
 	
+	//[-p preload]
+	for(i=0;i<preload-1;i++)
+		sig_alrm(SIGALRM);
+
 	init_sigaction();
-	init_timer(interval);	
-	//sig_alrm(SIGALRM);  /* send first packet */
+	init_timer(interval);
 
 	for(;;){//[-c count]
 		len = pr->salen;
@@ -229,9 +262,8 @@ void readloop(void)
 			{	
 				gettimeofday(&tval_recv, NULL);
 				tv_sub(&tval_recv, &tval_send);
-				if(((&tval_curr)->tv_sec * 1000.0 + (&tval_curr)->tv_usec / 1000.0) > timeout * 1.0) {
+				if(((&tval_curr)->tv_sec * 1000.0 + (&tval_curr)->tv_usec / 1000.0) > timeout * 1.0)
 					printf("ping: request timeout.\n");
-				}
 				continue;
 			}
 			else
@@ -243,9 +275,7 @@ void readloop(void)
 
 		(*pr->fproc)(recvbuf, n, &tval);//Output: icmp_sec & ttl & time
 		
-		received += 1;
-
-		if(nsent >= count)
+		if(nsent >= count && received == transmitted)
 			break;
 	}
 
@@ -303,6 +333,8 @@ void proc_v4(char *ptr, ssize_t len, struct timeval *tvrecv)
 				putchar('\b');
 			}
 		}
+
+		received += 1;
 	}
 	else if (verbose) {
 		if(!(opt & OPTION_QUIET))//[-q]
@@ -441,22 +473,15 @@ void sig_alrm(int signo)
 
 	transmitted += 1;
 
-	if(opt & OPTION_FLOOD) {
+	if(opt & OPTION_FLOOD)
 		putchar('.');
-		
-	}
 
-	if(opt & OPTION_LOOPBACK) {
+	if(opt & OPTION_LOOPBACK)
 		printf("From localhost (%s): seq=%u Time to live exceeded\n", Sock_ntop_host(ai->ai_addr, ai->ai_addrlen), i++);
-	}
-	else if((opt & OPTION_DIRECTROUTE) && received == 0) {
+	else if((opt & OPTION_DIRECTROUTE) && received == 0)
 		printf("ping: sendmsg: Network is unreachable.\n");
-	}
-
-	//alarm(interval);//[-i interval]
-	//alarm(1);
 	
-	return; /* probably interrupts recvfrom() */
+	return;
 }
 
 void tv_sub(struct timeval *out, struct timeval *in)
@@ -552,7 +577,7 @@ static void err_doit(int errnoflag, int level, const char *fmt, va_list ap)
 	strcat(buf, "\n");
 
 	if (daemon_proc) {
-		;//syslog(level, buf);
+		syslog(level, buf);
 	}
 	else {
 		fflush(stdout); /* in case stdout and stderr are the same */
@@ -586,7 +611,7 @@ void err_sys(const char *fmt, ...)
 
 void print_usage(void)
 {
-	printf("Usage: ping [-aAbBdDfhLnOqrRUvV] [-c count] [-i interval] [-I interface]\n            [-m mark] [-M pmtudisc_option] [-l preload] [-p pattern] [-Q tos]\n            [-s packetsize] [-S sndbuf] [-t ttl] [-T timestamp_option]\n            [-w deadline] [-W timeout] [hop1 ...] destination\n");
+	printf("Usage: ping [-abBdDfhnqrRUvV] [-c count] [-i interval] [-l preload]\n            [-p pattern] [-Q tos] [-s packetsize] [-S sndbuf] [-t ttl]\n            [-T timestamp_option] [-w deadline] [-W timeout] [hop1 ...] destination\n");
 }
 
 void proc_rtt(int sig)
@@ -668,7 +693,38 @@ int htoi(char s[])
     return n;  
 }  
 
+int is_hex(char * str)
+{
+	if(strstr(str,"a") != NULL || strstr(str,"b") != NULL || strstr(str,"c") != NULL ||
+		strstr(str,"d") != NULL || strstr(str,"e") != NULL || strstr(str,"f") != NULL)
+		return TRUE;
+	else if(strstr(str,"A") != NULL || strstr(str,"B") != NULL || strstr(str,"C") != NULL ||
+		strstr(str,"D") != NULL || strstr(str,"E") != NULL || strstr(str,"F") != NULL)
+		return TRUE;
+	return FALSE;
+}
 
+int parse_tos(char *str)
+{
+	const char *cp;
+	int tos;
+	char *ep;
+
+	if (str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
+		cp = str + 2;
+		tos = (int)strtol(cp, &ep, 16);
+	} else
+		tos = (int)strtol(str, &ep, 10);
+
+	if (*ep != '\0') {
+		err_quit("ping: \"%s\" bad value for TOS\n", str);
+	}
+
+	if (tos > TOS_MAX) {
+		err_quit("ping: the decimal value of TOS bits must be in range 0-255\n");
+	}
+	return(tos);
+}
 
 
 

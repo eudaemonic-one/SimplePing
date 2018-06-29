@@ -76,13 +76,31 @@ struct proto {
 #define bool int
 const int TRUE = 1;
 const int FALSE = 0;
+#define SNAPSHOT 		"s20180702"
+#define	MAXIPLEN		60
+#define	MAXICMPLEN		76
+#define	NROUTES			9	/* number of record route slots */
+#define IPOPT_NOP		1  
+#define IPOPT_RR		7	/* record packet route */
+#define IPOPT_TS		68	/* timestamp */
+#define IPOPT_SECURITY		130	/* provide s,c,h,tcc */
+#define IPOPT_LSRR		131	/* loose source route */
+#define IPOPT_SATID		136	/* satnet id */
+#define IPOPT_SSRR		137	/* strict source route */
+#define IPOPT_OPTVAL		0	/* option ID */
+#define IPOPT_OLEN		1	/* option length */
+#define IPOPT_OFFSET		2	/* offset within option */
+#define IPOPT_MINOFF		4	/* min value of above */
+#define IPOPT_TS_TSONLY 	0       /*timestamps only */
+#define IPOPT_TS_TSANDADDR	1       /*timestamps and addresses */
+#define IPOPT_TS_PRESPEC	3       /*specified modules only */
 
-/*Constant Parameters*/
-#define SNAPSHOT "s20180702"
-#define FLOOD_INTERVAL 0.01
+#define TOS_MAX		255	/* 8-bit TOS field */
+#define FLOOD_INTERVAL 	0.01
 
 /*ping option*/
 int opt = 0;
+int optlen = 0;
 #define	OPTION_AUDIBLE		0x0001
 #define	OPTION_BROADCAST	0x0002
 #define	OPTION_STRICTSOURCE	0x0004
@@ -107,6 +125,7 @@ int timestamp_type = 0;
 /*ping With-Parameters*/
 int count = 4096;//[-c count] (time)
 double interval = 1.0;//[-i interval] (s)
+int preload = 0;//[-l preload] (time)
 unsigned char pattern = 0xff;//[-p pattern] (hex)
 int tos = 0;//[-Q tos] (degree)
 int sndbuf = BUFSIZE;//[-S sndbuf] (byte)
@@ -139,7 +158,8 @@ void init_timer(double interval);
 void init_sigaction(void);
 int tolower(int c);
 int htoi(char s[]);
-
+int is_hex(char * str);
+int parse_tos(char *str);
 
 
 
