@@ -47,7 +47,7 @@ PING（Packet Internet Groper）命令是向某个（些）IP地址发送一个�
   * 预期结果：按照默认间隔时间1s发送ICMP包到环回接口127.0.0.1 ，收到来自环回接口127.0.0.1返回的包含ECHO_RESPONSE信息的ICMP数据报，并先后输出时间戳和对应收到的数据报信息。
 
 * **-f**
-解释：极限检测ping。对任意ECHO_REQUEST发送打印一个‘.’，当收到任意一个ECHO_REPLY的ICMP数据报时回退一个字符位。这个选项提供了快速展示数据报丢失的原  * 因。
+  * 解释：极限检测ping。对任意ECHO_REQUEST发送打印一个‘.’，当收到任意一个ECHO_REPLY的ICMP数据报时回退一个字符位。这个选项提供了快速展示数据报丢失的原因。
   * 参数：无。
   * 输入样例：ping www.baidu.com -f
   * 预期结果：按照极限速度flood_interval发送ICMP数据报到指定的 www.baidu.com ，发送速度不小于每秒100次，当发送时打印‘.’，当收到返回时退格，最后显示的‘.’
